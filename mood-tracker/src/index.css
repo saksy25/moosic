@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Luckiest+Guy&display=swap');
+
+@theme {
+    --font-sans: "Luckiest Guy", cursive;
+    --color-cream: #fff9e9;
+    --color-cream1: #a6976f;
+}

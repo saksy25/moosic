@@ -1,0 +1,13 @@
+
+frontend
+npm install
+npm i recharts
+npm i react-router-dom
+npm 
+
+npm init -y
+npm install express mongoose dotenv 
+
+npm install openai
+npm install @google/genai
+npm install node-fetch
