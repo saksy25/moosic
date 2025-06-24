@@ -28,6 +28,10 @@ const {
     setRecordingTime,
     analysis,
     setAnalysis,
+    moodAnalysis,
+    setMoodAnalysis,
+    recommendations,
+    setRecommendations,
     fileInputRef,
     recordingInterval
   } = useAuth();
@@ -87,6 +91,22 @@ const handleAnalyze = async () => {
     const data = await res.json();
     if (data.analysis) {
       setAnalysis(data.analysis);
+      setMoodAnalysis(data.analysis);
+      // Get mood-based recommendations
+      try {
+        const recommendationsRes = await fetch('http://localhost:5000/api/mood-recommendations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ analysis: data.analysis }),
+        });
+
+        if (recommendationsRes.ok) {
+          const recommendationsData = await recommendationsRes.json();
+          setRecommendations(recommendationsData.recommendations);
+        }
+      } catch (error) {
+        console.error('Error getting recommendations:', error);
+      }
     } else {
       setAnalysis("We received your input but couldn't generate an analysis. Please try again.");
     }
@@ -341,7 +361,7 @@ const handleAnalyze = async () => {
                 onClick={handleTherapy}
                 className="bg-cyan-400 text-white px-6 py-2 rounded-full font-semibold text-lg hover:bg-cyan-500 transition-colors shadow-lg drop-shadow-md transform hover:scale-105 active:scale-95"
                 >
-                Get Professional Support
+                Get Music Therapy and more...
                 </button>
             </div>
             )}

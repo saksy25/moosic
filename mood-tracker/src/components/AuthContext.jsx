@@ -22,6 +22,8 @@ export const AuthProvider = ({ children }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [analysis, setAnalysis] = useState('');
+  const [moodAnalysis, setMoodAnalysis] = useState('');
+  const [recommendations, setRecommendations] = useState(null);
   const fileInputRef = useRef(null);
   const recordingInterval = useRef(null);
 
@@ -77,15 +79,7 @@ export const AuthProvider = ({ children }) => {
   const isAuthenticated = () => {
     return !!token && !!user;
   };
-
-  // const value = {
-  //   user,
-  //   token,
-  //   loading,
-  //   login,
-  //   logout,
-  //   isAuthenticated
-  // };
+  
   const value = {
     user,
     token,
@@ -107,6 +101,10 @@ export const AuthProvider = ({ children }) => {
     setRecordingTime,
     analysis,
     setAnalysis,
+    moodAnalysis,
+    setMoodAnalysis,
+    recommendations,
+    setRecommendations,
     fileInputRef,
     recordingInterval
   };

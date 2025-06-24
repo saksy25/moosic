@@ -8,9 +8,10 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 
 import fetch from 'node-fetch'; // If not installed, run: npm install node-fetch
+import axios from 'axios';
+import querystring from 'querystring';
 
 dotenv.config();
-
 
 const app = express();
 
@@ -102,6 +103,79 @@ const auth = async (req, res, next) => {
     next();
   } catch (error) {
     res.status(401).json({ message: 'Token is not valid' });
+  }
+};
+
+
+let spotifyToken = null;
+let tokenExpiry = null;
+
+const getSpotifyToken = async () => {
+  if (spotifyToken && tokenExpiry && Date.now() < tokenExpiry) {
+    return spotifyToken;
+  }
+
+  try {
+    const response = await axios.post('https://accounts.spotify.com/api/token', 
+      querystring.stringify({
+        grant_type: 'client_credentials'
+      }), {
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64')}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    spotifyToken = response.data.access_token;
+    tokenExpiry = Date.now() + (response.data.expires_in * 1000);
+    return spotifyToken;
+  } catch (error) {
+    console.error('Error getting Spotify token:', error);
+    throw error;
+  }
+};
+
+// Mood to search terms mapping
+const getMoodSearchTerms = (analysis) => {
+  const text = analysis.toLowerCase();
+  
+  if (text.includes('happy') || text.includes('joy') || text.includes('excited')) {
+    return {
+      spotify: ['happy', 'upbeat', 'cheerful', 'energetic'],
+      youtube: 'happy mood boost meditation',
+      books: 'happiness positive psychology'
+    };
+  } else if (text.includes('sad') || text.includes('down') || text.includes('depressed')) {
+    return {
+      spotify: ['sad', 'melancholy', 'comfort', 'healing'],
+      youtube: 'depression help meditation therapy',
+      books: 'depression recovery self help'
+    };
+  } else if (text.includes('anxious') || text.includes('worry') || text.includes('stress')) {
+    return {
+      spotify: ['calm', 'relaxing', 'peaceful', 'anxiety relief'],
+      youtube: 'anxiety relief meditation breathing',
+      books: 'anxiety management mindfulness'
+    };
+  } else if (text.includes('angry') || text.includes('frustrated') || text.includes('mad')) {
+    return {
+      spotify: ['calm', 'soothing', 'anger management', 'peaceful'],
+      youtube: 'anger management meditation calm',
+      books: 'anger management emotional regulation'
+    };
+  } else if (text.includes('tired') || text.includes('exhausted') || text.includes('fatigue')) {
+    return {
+      spotify: ['energizing', 'motivational', 'uplifting', 'boost'],
+      youtube: 'energy boost meditation motivation',
+      books: 'energy management productivity'
+    };
+  } else {
+    return {
+      spotify: ['peaceful', 'calm', 'relaxing', 'mindful'],
+      youtube: 'mindfulness meditation wellness',
+      books: 'mental health wellness'
+    };
   }
 };
 
@@ -277,6 +351,135 @@ Be compassionate and practical.`;
   }
 });
 
+
+// Get mood-based recommendations
+app.post('/api/mood-recommendations', async (req, res) => {
+  try {
+    const { analysis } = req.body;
+        
+    if (!analysis) {
+      return res.status(400).json({ error: 'Analysis is required' });
+    }
+
+    const searchTerms = getMoodSearchTerms(analysis);
+    const recommendations = {};
+
+    // Get Spotify recommendations
+    try {
+      const token = await getSpotifyToken();
+            
+      // Get songs
+      const songsPromises = searchTerms.spotify.slice(0, 2).map(async (term) => {
+        const response = await axios.get(`https://api.spotify.com/v1/search`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          params: {
+            q: `${term} mood`,
+            type: 'track',
+            limit: 3
+          }
+        });
+        return response.data.tracks.items;
+      });
+
+      const songsResults = await Promise.all(songsPromises);
+      recommendations.songs = songsResults.flat().slice(0, 6)
+        .filter(track => track && track.id) // Filter out null/undefined tracks
+        .map(track => ({
+          id: track.id,
+          title: track.name,
+          artist: track.artists?.[0]?.name || 'Unknown Artist',
+          url: track.external_urls?.spotify,
+          preview_url: track.preview_url,
+          image: track.album?.images?.[0]?.url || null // Safe access with fallback
+        }));
+
+      // Get playlists
+      const playlistsPromises = searchTerms.spotify.slice(0, 2).map(async (term) => {
+        const response = await axios.get(`https://api.spotify.com/v1/search`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          params: {
+            q: `${term} therapy wellness`,
+            type: 'playlist',
+            limit: 2
+          }
+        });
+        return response.data.playlists.items;
+      });
+
+      const playlistsResults = await Promise.all(playlistsPromises);
+      recommendations.playlists = playlistsResults.flat().slice(0, 4)
+        .filter(playlist => playlist && playlist.id) // Filter out null/undefined playlists
+        .map(playlist => ({
+          id: playlist.id,
+          title: playlist.name,
+          description: playlist.description || '',
+          url: playlist.external_urls?.spotify,
+          image: playlist.images?.[0]?.url || null, // Safe access with fallback
+          tracks: playlist.tracks?.total || 0
+        }));
+
+    } catch (error) {
+      console.error('Spotify API error:', error.response?.data || error.message);
+      recommendations.songs = [];
+      recommendations.playlists = [];
+    }
+
+    // Get YouTube videos
+    try {
+      const response = await axios.get(`https://www.googleapis.com/youtube/v3/search`, {
+        params: {
+          key: process.env.YOUTUBE_API_KEY,
+          q: searchTerms.youtube,
+          part: 'snippet',
+          type: 'video',
+          maxResults: 4,
+          videoDuration: 'medium'
+        }
+      });
+
+      recommendations.videos = response.data.items.map(video => ({
+        id: video.id.videoId,
+        title: video.snippet.title,
+        description: video.snippet.description,
+        thumbnail: video.snippet.thumbnails.medium.url,
+        url: `https://www.youtube.com/watch?v=${video.id.videoId}`,
+        channel: video.snippet.channelTitle
+      }));
+    } catch (error) {
+      console.error('YouTube API error:', error);
+      recommendations.videos = [];
+    }
+
+    // Get book recommendations (using Google Books API - free)
+    try {
+      const response = await axios.get(`https://www.googleapis.com/books/v1/volumes`, {
+        params: {
+          q: searchTerms.books,
+          maxResults: 4,
+          orderBy: 'relevance'
+        }
+      });
+
+      recommendations.books = response.data.items?.map(book => ({
+        id: book.id,
+        title: book.volumeInfo.title,
+        authors: book.volumeInfo.authors?.join(', ') || 'Unknown Author',
+        description: book.volumeInfo.description,
+        thumbnail: book.volumeInfo.imageLinks?.thumbnail,
+        previewLink: book.volumeInfo.previewLink,
+        infoLink: book.volumeInfo.infoLink
+      })) || [];
+    } catch (error) {
+      console.error('Google Books API error:', error);
+      recommendations.books = [];
+    }
+
+    res.json({ recommendations });
+  } catch (error) {
+    console.error('Error getting recommendations:', error);
+    res.status(500).json({ error: 'Failed to get recommendations' });
+  }
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
